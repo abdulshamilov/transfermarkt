@@ -1,0 +1,36 @@
+{% load i18n %}
+{% if app_list %}
+<div class="app-card-grid">
+    {% for app in app_list %}
+    <div class="app-card app-{{ app.app_label }}{% if app.app_url in request.path|urlencode %} current-app{% endif %}">
+        <div class="app-card-head">
+            <a href="{{ app.app_url }}" title="{% blocktranslate with name=app.name %}Models in the {{ name }} application{% endblocktranslate %}">{{ app.name }}</a>
+        </div>
+        <ul class="app-card-models">
+            {% for model in app.models %}
+            <li class="model-{{ model.object_name|lower }}{% if model.admin_url in request.path|urlencode %} current-model{% endif %}">
+                <span class="app-card-model-icon"></span>
+                {% if model.admin_url %}
+                <a href="{{ model.admin_url }}"{% if model.admin_url in request.path|urlencode %} aria-current="page"{% endif %}>{{ model.name }}</a>
+                {% else %}
+                <span>{{ model.name }}</span>
+                {% endif %}
+                <span class="app-card-model-actions">
+                    {% if model.add_url %}<a href="{{ model.add_url }}" class="addlink">{% translate 'Add' %}</a>{% endif %}
+                    {% if model.admin_url and show_changelinks %}
+                        {% if model.view_only %}
+                        <a href="{{ model.admin_url }}" class="viewlink">{% translate 'View' %}</a>
+                        {% else %}
+                        <a href="{{ model.admin_url }}" class="changelink">{% translate 'Change' %}</a>
+                        {% endif %}
+                    {% endif %}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p>{% translate "You don't have permission to view or edit anything." %}</p>
+{% endif %}

@@ -1,0 +1,79 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block coltype %}colMS{% endblock %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+
+{% block nav-breadcrumbs %}{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="dash-head">
+    <div>
+        <h1>{% translate 'Dashboard' %}</h1>
+        <p class="dash-subtitle">{% translate 'Manage players, clubs, leagues and tournaments with ease.' %}</p>
+    </div>
+    <div class="dash-head-actions">
+        <a class="dash-btn dash-btn-primary" href="{% url 'admin:general_player_add' %}">+ {% translate 'Add Player' %}</a>
+        <a class="dash-btn dash-btn-outline" href="{% url 'admin:general_club_add' %}">{% translate 'Add Club' %}</a>
+    </div>
+</div>
+
+{% if stats %}
+<div class="stat-cards">
+    {% for stat in stats %}
+    <div class="stat-card{% if forloop.first %} stat-card-primary{% endif %}">
+        <div class="stat-card-top">
+            <span class="stat-card-label">{{ stat.label }}</span>
+            <span class="stat-card-arrow">&#8599;</span>
+        </div>
+        <div class="stat-card-value">{{ stat.value }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="dash-grid">
+    <div class="dash-panel dash-panel-main">
+        <div class="dash-panel-head">
+            <h2>{% translate 'Applications' %}</h2>
+        </div>
+        <div id="content-main">
+            {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+        </div>
+    </div>
+
+    <div class="dash-panel dash-panel-side">
+        <div class="dash-panel-head">
+            <h2>{% translate 'Recent actions' %}</h2>
+        </div>
+        {% load log %}
+        {% get_admin_log 8 as admin_log for_user user %}
+        {% if not admin_log %}
+        <p class="dash-empty">{% translate 'No recent actions.' %}</p>
+        {% else %}
+        <ul class="dash-actionlist">
+            {% for entry in admin_log %}
+            <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+                <span class="dash-action-dot"></span>
+                <div>
+                    {% if entry.is_deletion or not entry.get_admin_url %}
+                    <span class="dash-action-title">{{ entry.object_repr }}</span>
+                    {% else %}
+                    <a class="dash-action-title" href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+                    {% endif %}
+                    {% if entry.content_type %}
+                    <div class="dash-action-meta">{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}</div>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

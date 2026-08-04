@@ -1,0 +1,44 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/theme.css' %}">
+{% endblock %}
+
+{% block branding %}{% endblock %}
+
+{% block usertools %}
+{% if has_permission %}
+<div id="user-tools">
+    <div class="topbar-search">
+        <span class="topbar-search-icon"></span>
+        <input type="text" class="topbar-search-input" placeholder="{% translate 'Search' %}" disabled>
+    </div>
+    <div class="topbar-icons">
+        <span class="topbar-icon-btn" title="{% translate 'Mail' %}">&#9993;</span>
+        <span class="topbar-icon-btn" title="{% translate 'Notifications' %}">&#128276;</span>
+    </div>
+    <div class="topbar-user">
+        <div class="topbar-avatar">{{ user.get_username|first|upper }}</div>
+        <div class="topbar-user-text">
+            <div class="topbar-user-name">{% firstof user.get_full_name user.get_username %}</div>
+            <div class="topbar-user-email">{{ user.email|default:user.get_username }}</div>
+        </div>
+    </div>
+    {% block userlinks %}
+    <div class="topbar-links">
+        {% if user.has_usable_password %}<a href="{% url 'admin:password_change' %}">{% translate 'Change password' %}</a>{% endif %}
+        <form id="logout-form" method="post" action="{% url 'admin:logout' %}">
+            {% csrf_token %}
+            <button type="submit">{% translate 'Log out' %}</button>
+        </form>
+    </div>
+    {% endblock %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

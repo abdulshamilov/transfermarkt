@@ -1,0 +1,50 @@
+{% load i18n %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+    <div class="sidebar-brand">
+        <a href="{% url 'admin:index' %}">
+            <span class="sidebar-logo-icon">&#9917;</span>
+            Transfermarkt
+        </a>
+    </div>
+
+    <input type="search" id="nav-filter"
+           placeholder="{% translate 'Start typing to filter…' %}"
+           aria-label="{% translate 'Filter navigation items' %}">
+
+    <div class="sidebar-section-label">{% translate 'Menu' %}</div>
+    {% for app in available_apps %}
+        <div class="sidebar-app app-{{ app.app_label }}{% if app.app_url in request.path|urlencode %} current-app{% endif %}">
+            <div class="sidebar-app-name">{{ app.name }}</div>
+            {% for model in app.models %}
+                {% if model.admin_url %}
+                    <a href="{{ model.admin_url }}"
+                       class="sidebar-link model-{{ model.object_name|lower }}{% if model.admin_url in request.path|urlencode %} current-model{% endif %}"
+                       {% if model.admin_url in request.path|urlencode %}aria-current="page"{% endif %}>
+                        <span class="sidebar-icon"></span>{{ model.name }}
+                    </a>
+                {% else %}
+                    <span class="sidebar-link disabled model-{{ model.object_name|lower }}">
+                        <span class="sidebar-icon"></span>{{ model.name }}
+                    </span>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% endfor %}
+
+    <div class="sidebar-section-label">{% translate 'General' %}</div>
+    {% if user.has_usable_password %}
+    <a href="{% url 'admin:password_change' %}" class="sidebar-link">
+        <span class="sidebar-icon icon-settings"></span>{% translate 'Settings' %}
+    </a>
+    {% endif %}
+    <a href="https://docs.djangoproject.com/en/4.2/ref/contrib/admin/" target="_blank" rel="noopener" class="sidebar-link">
+        <span class="sidebar-icon icon-help"></span>{% translate 'Help' %}
+    </a>
+    <form id="sidebar-logout-form" method="post" action="{% url 'admin:logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="sidebar-link sidebar-logout">
+            <span class="sidebar-icon icon-logout"></span>{% translate 'Logout' %}
+        </button>
+    </form>
+</nav>
