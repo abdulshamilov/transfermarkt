@@ -267,6 +267,7 @@ def parse(data):
             "Часы работы": tags.get("opening_hours", ""),
             "VK / Telegram": tags.get("contact:vk") or tags.get("contact:telegram") or "",
             "Ссылка на карте": f"https://www.openstreetmap.org/{osm_type}/{el['id']}",
+            "Источник": "OpenStreetMap",
             "Статус звонка": "Не звонили",
             "Комментарий": "",
         })
@@ -293,7 +294,7 @@ HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 NO_SITE_FILL = PatternFill("solid", fgColor="E2EFDA")
 WIDTHS = {"Название": 34, "Категория": 20, "Подкатегория": 22, "Телефон": 19, "Доп. телефоны": 22,
           "Сайт": 30, "Есть сайт": 10, "Email": 26, "Адрес": 34, "Часы работы": 24,
-          "VK / Telegram": 24, "Ссылка на карте": 22, "Статус звонка": 15, "Комментарий": 30}
+          "VK / Telegram": 24, "Ссылка на карте": 22, "Источник": 14, "Статус звонка": 15, "Комментарий": 30}
 
 
 def write_sheet(ws, rows):
@@ -334,7 +335,8 @@ def write_excel(rows, path):
     summary.cell(row=summary.max_row, column=1).font = Font(bold=True)
     summary.append([])
     summary.append(["Зелёным выделены компании без сайта — самые горячие лиды для IT-агентства."])
-    summary.append(["Источник: OpenStreetMap (ODbL). Перед звонком сверяйте актуальность номера."])
+    summary.append(["Источники: " + ", ".join(sorted({r.get("Источник", "") for r in rows}))
+                    + ". Перед звонком сверяйте актуальность номера."])
     summary.column_dimensions["A"].width = 28
     summary.column_dimensions["B"].width = 10
     summary.column_dimensions["C"].width = 12
