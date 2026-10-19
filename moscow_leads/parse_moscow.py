@@ -413,6 +413,7 @@ def main():
     ap.add_argument("--from-json", help="взять сохранённый ответ Overpass вместо запроса")
     ap.add_argument("--from-pbf", help="взять выгрузку OSM .osm.pbf вместо запроса")
     ap.add_argument("--save-json", help="сохранить сырой ответ Overpass в файл")
+    ap.add_argument("--only-no-site", action="store_true", help="только компании без сайта")
     ap.add_argument("--any-site", dest="no_site_first", action="store_false",
                     help="не поднимать в приоритет компании без сайта")
     args = ap.parse_args()
@@ -430,6 +431,9 @@ def main():
 
     rows = parse(data)
     print(f"Найдено объектов с телефоном: {len(rows)}", file=sys.stderr)
+    if args.only_no_site:
+        rows = [r for r in rows if r["Есть сайт"] == "Нет"]
+        print(f"Из них без сайта: {len(rows)}", file=sys.stderr)
     rows = select(rows, args.limit, args.no_site_first)
     write_excel(rows, args.out)
     print(f"Сохранено {len(rows)} записей в {args.out}", file=sys.stderr)
