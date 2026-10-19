@@ -11,6 +11,17 @@ python parse_moscow.py                 # 3000 записей -> moscow_leads.xls
 python parse_moscow.py --limit 2000    # другое количество
 ```
 
+Если Overpass недоступен, возьмите готовую выгрузку Москвы и укажите её файлом
+(нужен `pip install osmium`):
+
+```bash
+curl -O https://download.bbbike.org/osm/bbbike/Moscow/Moscow.osm.pbf
+python parse_moscow.py --from-pbf Moscow.osm.pbf
+```
+
+У точек без адреса подставляется адрес ближайшего здания (до ~60 м),
+ссылка на карте ведёт в Яндекс Карты по координатам.
+
 ## Что в файле
 
 - **Сводка**: сколько записей в каждой категории и сколько из них без сайта.

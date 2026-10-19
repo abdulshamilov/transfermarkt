@@ -160,7 +160,6 @@ CATEGORY_RULES = [
     (("shop", None), ("Магазины", "Магазин")),
     (("tourism", None), ("Гостиницы", "Туризм")),
     (("leisure", None), ("Развлечения", "Досуг")),
-    (("amenity", None), ("Прочее", "Прочее")),
 ]
 
 # Явно не клиенты: госучреждения, банкоматы и т.п.
@@ -203,6 +202,63 @@ def fetch_overpass(query):
                 print(f"  ошибка: {e}", file=sys.stderr)
             time.sleep(5 * (attempt + 1))
     sys.exit("Не удалось получить данные ни с одного Overpass-сервера.")
+
+
+def _centroid(obj):
+    if obj.type_str() == "n":
+        return (obj.location.lat, obj.location.lon) if obj.location.valid() else None
+    if obj.type_str() == "w":
+        pts = [(n.location.lat, n.location.lon) for n in obj.nodes if n.location.valid()]
+        if pts:
+            return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    return None
+
+
+def load_pbf(path):
+    """Читает выгрузку OSM (.osm.pbf, например с download.bbbike.org) в формате ответа Overpass.
+
+    У точек без адреса подставляет адрес ближайшего здания (до ~60 м).
+    """
+    import osmium
+
+    elements, addresses = [], defaultdict(list)
+    for obj in osmium.FileProcessor(path).with_locations():
+        if obj.type_str() == "r":
+            continue
+        tags = obj.tags
+        is_poi = ("phone" in tags or "contact:phone" in tags) and "name" in tags \
+            and any(k in tags for k in KEYS)
+        has_addr = "addr:street" in tags and "addr:housenumber" in tags
+        if not is_poi and not has_addr:
+            continue
+        center = _centroid(obj)
+        if has_addr and center:
+            addr = f"{tags['addr:street']}, {tags['addr:housenumber']}"
+            addresses[(round(center[0], 3), round(center[1], 3))].append((center, addr))
+        if not is_poi:
+            continue
+        tags = dict(tags)
+        if "москва" not in tags.get("addr:city", "Москва").lower():
+            continue
+        el = {"type": {"n": "node", "w": "way"}[obj.type_str()], "id": obj.id, "tags": tags}
+        if center:
+            el["center"] = {"lat": center[0], "lon": center[1]}
+        elements.append(el)
+
+    for el in elements:
+        if build_address(el["tags"]) or "center" not in el:
+            continue
+        lat, lon = el["center"]["lat"], el["center"]["lon"]
+        best, best_d = None, 0.0006 ** 2  # ~60 м
+        for dlat in (-0.001, 0, 0.001):
+            for dlon in (-0.001, 0, 0.001):
+                for (alat, alon), addr in addresses.get((round(lat + dlat, 3), round(lon + dlon, 3)), ()):
+                    d = (alat - lat) ** 2 + ((alon - lon) * 0.56) ** 2  # cos(55.7°) ≈ 0.56
+                    if d < best_d:
+                        best, best_d = addr, d
+        if best:
+            el["tags"]["addr:full"] = best
+    return {"elements": elements}
 
 
 def normalize_phone(raw):
@@ -254,6 +310,9 @@ def parse(data):
         seen_phones.update(phones)
         site = tags.get("website") or tags.get("contact:website") or ""
         osm_type = el["type"]
+        center = el.get("center") or ({"lat": el["lat"], "lon": el["lon"]} if "lat" in el else None)
+        map_link = (f"https://yandex.ru/maps/?pt={center['lon']:.6f},{center['lat']:.6f}&z=18&l=map"
+                    if center else f"https://www.openstreetmap.org/{osm_type}/{el['id']}")
         rows.append({
             "Название": name,
             "Категория": cat[0],
@@ -266,7 +325,7 @@ def parse(data):
             "Адрес": build_address(tags),
             "Часы работы": tags.get("opening_hours", ""),
             "VK / Telegram": tags.get("contact:vk") or tags.get("contact:telegram") or "",
-            "Ссылка на карте": f"https://www.openstreetmap.org/{osm_type}/{el['id']}",
+            "Ссылка на карте": map_link,
             "Источник": "OpenStreetMap",
             "Статус звонка": "Не звонили",
             "Комментарий": "",
@@ -294,7 +353,7 @@ HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 NO_SITE_FILL = PatternFill("solid", fgColor="E2EFDA")
 WIDTHS = {"Название": 34, "Категория": 20, "Подкатегория": 22, "Телефон": 19, "Доп. телефоны": 22,
           "Сайт": 30, "Есть сайт": 10, "Email": 26, "Адрес": 34, "Часы работы": 24,
-          "VK / Telegram": 24, "Ссылка на карте": 22, "Источник": 14, "Статус звонка": 15, "Комментарий": 30}
+          "VK / Telegram": 24, "Ссылка на карте": 30, "Источник": 14, "Статус звонка": 15, "Комментарий": 30}
 
 
 def write_sheet(ws, rows):
@@ -352,12 +411,15 @@ def main():
     ap.add_argument("--limit", type=int, default=3000, help="сколько записей взять (по умолчанию 3000)")
     ap.add_argument("--out", default="moscow_leads.xlsx", help="путь к Excel-файлу")
     ap.add_argument("--from-json", help="взять сохранённый ответ Overpass вместо запроса")
+    ap.add_argument("--from-pbf", help="взять выгрузку OSM .osm.pbf вместо запроса")
     ap.add_argument("--save-json", help="сохранить сырой ответ Overpass в файл")
     ap.add_argument("--any-site", dest="no_site_first", action="store_false",
                     help="не поднимать в приоритет компании без сайта")
     args = ap.parse_args()
 
-    if args.from_json:
+    if args.from_pbf:
+        data = load_pbf(args.from_pbf)
+    elif args.from_json:
         with open(args.from_json, encoding="utf-8") as f:
             data = json.load(f)
     else:
