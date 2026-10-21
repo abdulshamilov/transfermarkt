@@ -12,6 +12,7 @@
 """
 import argparse
 import json
+import math
 import re
 import sys
 import time
@@ -214,18 +215,22 @@ def _centroid(obj):
     return None
 
 
-def load_pbf(path):
+def load_pbf(path, region="Москва", city_filter="москва"):
     """Читает выгрузку OSM (.osm.pbf, например с download.bbbike.org) в формате ответа Overpass.
 
-    У точек без адреса подставляет адрес ближайшего здания (до ~60 м).
+    У точек без адреса подставляет адрес ближайшего здания (до ~60 м),
+    у точек без города — ближайший населённый пункт.
     """
     import osmium
 
-    elements, addresses = [], defaultdict(list)
+    elements, addresses, places = [], defaultdict(list), []
     for obj in osmium.FileProcessor(path).with_locations():
         if obj.type_str() == "r":
             continue
         tags = obj.tags
+        if obj.type_str() == "n" and tags.get("place") in ("city", "town", "village", "hamlet") \
+                and "name" in tags and obj.location.valid():
+            places.append((obj.location.lat, obj.location.lon, tags["name"]))
         is_poi = ("phone" in tags or "contact:phone" in tags) and "name" in tags \
             and any(k in tags for k in KEYS)
         has_addr = "addr:street" in tags and "addr:housenumber" in tags
@@ -238,22 +243,28 @@ def load_pbf(path):
         if not is_poi:
             continue
         tags = dict(tags)
-        if "москва" not in tags.get("addr:city", "Москва").lower():
+        if city_filter and city_filter not in tags.get("addr:city", city_filter).lower():
             continue
+        tags["_region"] = region
         el = {"type": {"n": "node", "w": "way"}[obj.type_str()], "id": obj.id, "tags": tags}
         if center:
             el["center"] = {"lat": center[0], "lon": center[1]}
         elements.append(el)
 
     for el in elements:
-        if build_address(el["tags"]) or "center" not in el:
+        if "center" not in el:
             continue
         lat, lon = el["center"]["lat"], el["center"]["lon"]
+        kx = math.cos(math.radians(lat))
+        if not el["tags"].get("addr:city") and places:
+            el["tags"]["_city"] = min(places, key=lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * kx) ** 2)[2]
+        if build_address(el["tags"]):
+            continue
         best, best_d = None, 0.0006 ** 2  # ~60 м
         for dlat in (-0.001, 0, 0.001):
             for dlon in (-0.001, 0, 0.001):
                 for (alat, alon), addr in addresses.get((round(lat + dlat, 3), round(lon + dlon, 3)), ()):
-                    d = (alat - lat) ** 2 + ((alon - lon) * 0.56) ** 2  # cos(55.7°) ≈ 0.56
+                    d = (alat - lat) ** 2 + ((alon - lon) * kx) ** 2
                     if d < best_d:
                         best, best_d = addr, d
         if best:
@@ -305,7 +316,9 @@ def parse(data):
             continue
         phones = normalize_phone(";".join(filter(None, (
             tags.get("phone"), tags.get("contact:phone"), tags.get("contact:mobile")))))
-        if not phones or phones[0] in seen_phones:
+        # Номера 8-800 — колл-центры, а не владелец бизнеса: ставим их в конец, без других номеров отбрасываем.
+        phones = sorted(phones, key=lambda ph: ph.startswith("+7 (800)"))
+        if not phones or phones[0].startswith("+7 (800)") or phones[0] in seen_phones:
             continue
         seen_phones.update(phones)
         site = tags.get("website") or tags.get("contact:website") or ""
@@ -322,9 +335,12 @@ def parse(data):
             "Сайт": site,
             "Есть сайт": "Да" if site else "Нет",
             "Email": tags.get("email") or tags.get("contact:email") or "",
+            "Регион": tags.get("_region", "Москва"),
+            "Город": tags.get("addr:city") or tags.get("_city") or "",
             "Адрес": build_address(tags),
             "Часы работы": tags.get("opening_hours", ""),
-            "VK / Telegram": tags.get("contact:vk") or tags.get("contact:telegram") or "",
+            "Соцсети": ", ".join(filter(None, (tags.get(k) for k in (
+                "contact:instagram", "contact:vk", "contact:telegram", "contact:whatsapp")))),
             "Ссылка на карте": map_link,
             "Источник": "OpenStreetMap",
             "Статус звонка": "Не звонили",
@@ -345,15 +361,15 @@ def select(rows, limit, no_site_first):
         for cat in sorted(by_cat):
             if by_cat[cat] and len(picked) < limit:
                 picked.append(by_cat[cat].pop(0))
-    picked.sort(key=lambda r: (r["Категория"], r["Подкатегория"], r["Название"].lower()))
+    picked.sort(key=lambda r: (r["Регион"], r["Категория"], r["Подкатегория"], r["Название"].lower()))
     return picked
 
 
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 NO_SITE_FILL = PatternFill("solid", fgColor="E2EFDA")
 WIDTHS = {"Название": 34, "Категория": 20, "Подкатегория": 22, "Телефон": 19, "Доп. телефоны": 22,
-          "Сайт": 30, "Есть сайт": 10, "Email": 26, "Адрес": 34, "Часы работы": 24,
-          "VK / Telegram": 24, "Ссылка на карте": 30, "Источник": 14, "Статус звонка": 15, "Комментарий": 30}
+          "Сайт": 30, "Есть сайт": 10, "Email": 26, "Регион": 14, "Город": 18, "Адрес": 34, "Часы работы": 24,
+          "Соцсети": 28, "Ссылка на карте": 30, "Источник": 14, "Статус звонка": 15, "Комментарий": 30}
 
 
 def write_sheet(ws, rows):
@@ -392,6 +408,14 @@ def write_excel(rows, path):
         summary.append([cat, total[cat], no_site[cat]])
     summary.append(["ИТОГО", sum(total.values()), sum(no_site.values())])
     summary.cell(row=summary.max_row, column=1).font = Font(bold=True)
+    regions = Counter(r["Регион"] for r in rows)
+    if len(regions) > 1:
+        summary.append([])
+        summary.append(["Регион", "Всего", "Без сайта"])
+        for c in range(1, 4):
+            summary.cell(row=summary.max_row, column=c).font = Font(bold=True)
+        for reg, n in regions.most_common():
+            summary.append([reg, n, sum(1 for r in rows if r["Регион"] == reg and r["Есть сайт"] == "Нет")])
     summary.append([])
     summary.append(["Зелёным выделены компании без сайта — самые горячие лиды для IT-агентства."])
     summary.append(["Источники: " + ", ".join(sorted({r.get("Источник", "") for r in rows}))
@@ -411,7 +435,8 @@ def main():
     ap.add_argument("--limit", type=int, default=3000, help="сколько записей взять (по умолчанию 3000)")
     ap.add_argument("--out", default="moscow_leads.xlsx", help="путь к Excel-файлу")
     ap.add_argument("--from-json", help="взять сохранённый ответ Overpass вместо запроса")
-    ap.add_argument("--from-pbf", help="взять выгрузку OSM .osm.pbf вместо запроса")
+    ap.add_argument("--from-pbf", nargs="+", metavar="ФАЙЛ[:РЕГИОН]",
+                    help="выгрузки OSM .osm.pbf вместо запроса; без :РЕГИОН — Москва (с фильтром по городу)")
     ap.add_argument("--save-json", help="сохранить сырой ответ Overpass в файл")
     ap.add_argument("--only-no-site", action="store_true", help="только компании без сайта")
     ap.add_argument("--any-site", dest="no_site_first", action="store_false",
@@ -419,7 +444,12 @@ def main():
     args = ap.parse_args()
 
     if args.from_pbf:
-        data = load_pbf(args.from_pbf)
+        data = {"elements": []}
+        for spec in args.from_pbf:
+            path, _, region = spec.partition(":")
+            part = load_pbf(path, region, None) if region else load_pbf(path)
+            print(f"{region or 'Москва'}: {len(part['elements'])} объектов", file=sys.stderr)
+            data["elements"] += part["elements"]
     elif args.from_json:
         with open(args.from_json, encoding="utf-8") as f:
             data = json.load(f)

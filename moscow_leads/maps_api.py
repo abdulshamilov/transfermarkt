@@ -87,8 +87,8 @@ def empty_row(name, cat, phones, source):
     return {
         "Название": name, "Категория": cat[0], "Подкатегория": cat[1],
         "Телефон": phones[0], "Доп. телефоны": ", ".join(phones[1:]),
-        "Сайт": "", "Есть сайт": "Нет", "Email": "", "Адрес": "", "Часы работы": "",
-        "VK / Telegram": "", "Ссылка на карте": "", "Источник": source,
+        "Сайт": "", "Есть сайт": "Нет", "Email": "", "Регион": "Москва", "Город": "Москва", "Адрес": "", "Часы работы": "",
+        "Соцсети": "", "Ссылка на карте": "", "Источник": source,
         "Статус звонка": "Не звонили", "Комментарий": "",
     }
 
@@ -165,7 +165,7 @@ def dgis_row(item, cat):
     row.update({
         "Сайт": site, "Есть сайт": "Да" if site else "Нет", "Email": by_type.get("email", ""),
         "Адрес": item.get("address_name") or item.get("full_address_name", ""),
-        "VK / Telegram": by_type.get("vkontakte") or by_type.get("telegram", ""),
+        "Соцсети": ", ".join(filter(None, (by_type.get(k) for k in ("instagram", "vkontakte", "telegram", "whatsapp")))),
         "Ссылка на карте": f"https://2gis.ru/moscow/firm/{item.get('id', '').split('_')[0]}",
     })
     return row
